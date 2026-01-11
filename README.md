@@ -118,8 +118,6 @@ Actualmente, la aplicación está configurada para desarrollo con autenticación
 
 - [ ] Integración con servicios de IA reales (OpenAI, Claude, etc.)
 - [ ] Sistema de autenticación completo
-- [ ] Subida real de archivos y procesamiento
-- [ ] Base de datos para persistencia
 - [ ] Sistema de notificaciones
 - [ ] Colaboración entre estudiantes
 - [ ] Exportación de resultados
