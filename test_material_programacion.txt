@@ -1,0 +1,35 @@
+## Test Material - Programación Avanzada
+
+Este es un material de prueba para verificar que el sistema de conversión de PDF funciona correctamente.
+
+### Contenido del Curso
+
+- Variables y tipos de datos
+- Estructuras de control (if, for, while)
+- Funciones y procedimientos
+- Arrays y matrices
+- Programación orientada a objetos
+- Herencia y polimorfismo
+- Manejo de excepciones
+- Estructuras de datos avanzadas
+
+### Ejemplo de Código
+
+```javascript
+function calcularFactorial(n) {
+    if (n <= 1) {
+        return 1;
+    }
+    return n * calcularFactorial(n - 1);
+}
+
+console.log(calcularFactorial(5)); // Output: 120
+```
+
+### Conceptos Importantes
+
+1. **Recursión**: Una función que se llama a sí misma
+2. **Algoritmos**: Secuencia de pasos para resolver un problema
+3. **Complejidad**: Análisis del tiempo y espacio que requiere un algoritmo
+
+Este material servirá para generar preguntas de examen sobre programación.

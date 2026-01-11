@@ -24,11 +24,16 @@ export interface Course {
 export interface Material {
   id: string;
   nombre: string;
+  nombreOriginal?: string; // Nombre original del archivo
   tipo: 'pdf' | 'texto' | 'documento';
+  tipoOriginal?: string; // Tipo original antes de conversión
   contenido: string;
   fechaSubida: Date;
   cursoId: string;
   tamaño: number;
+  descripcion?: string;
+  fueConvertido?: boolean; // Indica si fue convertido de PDF a TXT
+  activo?: boolean; // Indica si el material está activo para ser incluido en exámenes
 }
 
 export interface Question {
@@ -36,7 +41,7 @@ export interface Question {
   tipo: 'multiple' | 'verdadero_falso' | 'abierta';
   pregunta: string;
   opciones?: string[];
-  respuestaCorrecta: string | number;
+  respuestaCorrecta: string | number | boolean;
   explicacion?: string;
   puntos: number;
 }

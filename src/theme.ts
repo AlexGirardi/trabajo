@@ -1,6 +1,20 @@
 import { createTheme } from '@mui/material/styles';
+import type { Theme } from '@mui/material/styles';
 
-export const theme = createTheme({
+// Base tokens shared
+const baseComponents: Theme['components'] = {
+  MuiButton: {
+    styleOverrides: {
+      root: { borderRadius: 8, textTransform: 'none', fontWeight: 500, padding: '8px 16px' },
+      contained: { boxShadow: '0 2px 4px rgba(0,0,0,0.15)', '&:hover': { boxShadow: '0 4px 10px rgba(0,0,0,0.25)' } }
+    }
+  },
+  MuiCard: { styleOverrides: { root: { borderRadius: 12, transition: 'box-shadow .25s', boxShadow: '0 2px 6px rgba(0,0,0,0.12)', '&:hover': { boxShadow: '0 4px 14px rgba(0,0,0,0.2)' } } } },
+  MuiTextField: { styleOverrides: { root: { '& .MuiOutlinedInput-root': { borderRadius: 8 } } } },
+  MuiAppBar: { styleOverrides: { root: { boxShadow: '0 2px 8px rgba(0,0,0,0.2)' } } },
+};
+
+export const themeLight = createTheme({
   palette: {
     primary: {
       main: '#1976d2',
@@ -80,53 +94,31 @@ export const theme = createTheme({
       lineHeight: 1.43,
     },
   },
-  components: {
-    MuiButton: {
-      styleOverrides: {
-        root: {
-          borderRadius: 8,
-          textTransform: 'none',
-          fontWeight: 500,
-          padding: '8px 16px',
-        },
-        contained: {
-          boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
-          '&:hover': {
-            boxShadow: '0 4px 8px rgba(0,0,0,0.15)',
-          },
-        },
-      },
-    },
-    MuiCard: {
-      styleOverrides: {
-        root: {
-          borderRadius: 12,
-          boxShadow: '0 2px 8px rgba(0,0,0,0.1)',
-          '&:hover': {
-            boxShadow: '0 4px 16px rgba(0,0,0,0.15)',
-          },
-        },
-      },
-    },
-    MuiTextField: {
-      styleOverrides: {
-        root: {
-          '& .MuiOutlinedInput-root': {
-            borderRadius: 8,
-          },
-        },
-      },
-    },
-    MuiAppBar: {
-      styleOverrides: {
-        root: {
-          boxShadow: '0 2px 8px rgba(0,0,0,0.1)',
-        },
-      },
-    },
-  },
+  components: baseComponents,
   spacing: 8,
   shape: {
     borderRadius: 8,
   },
 });
+
+export const themeDark = createTheme({
+  palette: {
+    mode: 'dark',
+    primary: { main: '#90caf9', light: '#e3f2fd', dark: '#42a5f5', contrastText: '#0d1117' },
+    secondary: { main: '#f48fb1', light: '#f8bbd0', dark: '#ad4875', contrastText: '#0d1117' },
+    background: { default: '#0d1117', paper: '#161b22' },
+    success: { main: '#4caf50' },
+    error: { main: '#ef5350' },
+    warning: { main: '#ffb74d' },
+    info: { main: '#64b5f6' },
+    divider: '#30363d'
+  },
+  typography: {
+    fontFamily: '"Roboto", "Helvetica", "Arial", sans-serif'
+  },
+  components: baseComponents,
+  spacing: 8,
+  shape: { borderRadius: 8 }
+});
+
+export type ThemeMode = 'light' | 'dark';

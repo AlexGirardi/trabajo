@@ -1,0 +1,13 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(node remove-markdown.js:*)",
+      "Bash(node remove-markdown.cjs)",
+      "Bash(git checkout:*)",
+      "Bash(python restore_codeblocks.py:*)",
+      "Bash(node:*)"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}

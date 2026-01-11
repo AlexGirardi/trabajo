@@ -7,10 +7,6 @@ import {
   TextField,
   Button,
   Box,
-  FormControl,
-  InputLabel,
-  Select,
-  MenuItem,
   Chip,
   Typography,
   Alert,
@@ -26,40 +22,27 @@ import {
   Add,
   Delete,
   Description,
-  PictureAsPdf,
-  Link,
 } from '@mui/icons-material';
-import type { Course } from '../../types';
+import { UploadMaterialModal } from './UploadMaterialModal';
+import { materialService } from '../../services/materialService';
+import type { Course, Material as MaterialType } from '../../types';
 
 interface CreateCourseModalProps {
   open: boolean;
   onClose: () => void;
-  onSave: (course: Omit<Course, 'id'>) => void;
+  onSave: (course: Omit<Course, 'id'>) => Course;
 }
 
 interface Material {
   id: string;
   nombre: string;
-  tipo: 'documento' | 'enlace' | 'texto';
-  contenido?: string;
-  url?: string;
+  nombreOriginal: string;
+  tipo: string;
+  tipoOriginal: string;
+  contenido: string;
+  tamaño: number;
+  fueConvertido: boolean;
 }
-
-const categorias = [
-  'Matemáticas',
-  'Ciencias',
-  'Historia',
-  'Literatura',
-  'Idiomas',
-  'Informática',
-  'Arte',
-  'Música',
-  'Filosofía',
-  'Derecho',
-  'Medicina',
-  'Ingeniería',
-  'Otros'
-];
 
 const coloresDisponibles = [
   '#1976d2', '#388e3c', '#f57c00', '#d32f2f',
@@ -75,27 +58,14 @@ export const CreateCourseModal: React.FC<CreateCourseModalProps> = ({
   const [formData, setFormData] = useState({
     nombre: '',
     descripcion: '',
-    categoria: '',
-    semestre: '',
-    profesor: '',
     color: coloresDisponibles[0],
   });
-
-  const [materiales, setMateriales] = useState<Material[]>([]);  const [nuevoMaterial, setNuevoMaterial] = useState<{
-    nombre: string;
-    tipo: 'documento' | 'enlace' | 'texto';
-    contenido: string;
-    url: string;
-  }>({
-    nombre: '',
-    tipo: 'documento',
-    contenido: '',
-    url: '',
-  });
-  const [tags, setTags] = useState<string[]>([]);
+  const [materiales, setMateriales] = useState<Material[]>([]);  const [tags, setTags] = useState<string[]>([]);
   const [nuevoTag, setNuevoTag] = useState('');
   const [showSuccess, setShowSuccess] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
+  const [uploadModalOpen, setUploadModalOpen] = useState(false);
+  const [tempCourseId, setTempCourseId] = useState<string>('');
 
   const handleInputChange = (field: string, value: any) => {
     setFormData(prev => ({
@@ -121,26 +91,27 @@ export const CreateCourseModal: React.FC<CreateCourseModalProps> = ({
 
   const handleRemoveTag = (tagToRemove: string) => {
     setTags(prev => prev.filter(tag => tag !== tagToRemove));
+  };  const handleAddMaterial = () => {
+    // Necesitamos crear un curso temporal para poder usar el modal de subida
+    if (!tempCourseId) {
+      const tempId = 'temp-' + Date.now();
+      setTempCourseId(tempId);
+    }
+    setUploadModalOpen(true);
   };
 
-  const handleAddMaterial = () => {
-    if (nuevoMaterial.nombre.trim()) {
-      const material: Material = {
-        id: Date.now().toString(),
-        nombre: nuevoMaterial.nombre,
-        tipo: nuevoMaterial.tipo,
-        contenido: nuevoMaterial.tipo === 'texto' ? nuevoMaterial.contenido : undefined,
-        url: nuevoMaterial.tipo === 'enlace' ? nuevoMaterial.url : undefined,
-      };
-      
-      setMateriales(prev => [...prev, material]);
-      setNuevoMaterial({
-        nombre: '',
-        tipo: 'documento',
-        contenido: '',
-        url: '',
-      });
-    }
+  const handleMaterialUploaded = (material: MaterialType) => {
+    const newMaterial: Material = {
+      id: material.id,
+      nombre: material.nombre,
+      nombreOriginal: material.nombreOriginal || material.nombre,
+      tipo: material.tipo,
+      tipoOriginal: material.tipoOriginal || material.tipo,
+      contenido: material.contenido || '',
+      tamaño: material.tamaño || 0,
+      fueConvertido: material.fueConvertido || false,
+    };
+    setMateriales(prev => [...prev, newMaterial]);
   };
 
   const handleRemoveMaterial = (materialId: string) => {
@@ -153,17 +124,10 @@ export const CreateCourseModal: React.FC<CreateCourseModalProps> = ({
     if (!formData.nombre.trim()) {
       newErrors.nombre = 'El nombre del curso es obligatorio';
     }
-    if (!formData.categoria) {
-      newErrors.categoria = 'La categoría es obligatoria';
-    }
-    if (!formData.profesor.trim()) {
-      newErrors.profesor = 'El nombre del profesor es obligatorio';
-    }
 
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
   };
-
   const handleSave = () => {
     if (!validateForm()) {
       return;
@@ -172,17 +136,34 @@ export const CreateCourseModal: React.FC<CreateCourseModalProps> = ({
     const nuevoCurso: Omit<Course, 'id'> = {
       nombre: formData.nombre,
       descripcion: formData.descripcion,
-      categoria: formData.categoria,
+      categoria: 'General', // Valor por defecto
       fechaCreacion: new Date(),
-      profesor: formData.profesor,
-      semestre: formData.semestre,
+      profesor: 'Sin especificar', // Valor por defecto
+      semestre: '', // Valor por defecto
       color: formData.color,
       tags: tags,
       materialesCount: materiales.length,
-      // Los materiales se guardarían por separado en una implementación real
+      examenesCount: 0,
     };
 
-    onSave(nuevoCurso);
+    // Primero guardar el curso para obtener su ID
+    const cursoGuardado = onSave(nuevoCurso);
+      // Si hay materiales, guardarlos con el ID del curso
+    if (materiales.length > 0 && cursoGuardado) {
+      materiales.forEach(material => {
+        materialService.saveMaterial({
+          nombre: material.nombre,
+          nombreOriginal: material.nombreOriginal,
+          tipo: material.tipo as 'pdf' | 'texto' | 'documento',
+          tipoOriginal: material.tipoOriginal,
+          contenido: material.contenido,
+          cursoId: cursoGuardado.id,
+          tamaño: material.tamaño,
+          fueConvertido: material.fueConvertido,
+        });
+      });
+    }
+    
     setShowSuccess(true);
     
     // Cerrar modal después de un momento
@@ -196,32 +177,16 @@ export const CreateCourseModal: React.FC<CreateCourseModalProps> = ({
     setFormData({
       nombre: '',
       descripcion: '',
-      categoria: '',
-      semestre: '',
-      profesor: '',
       color: coloresDisponibles[0],
-    });
-    setMateriales([]);
+    });    setMateriales([]);
     setTags([]);
     setNuevoTag('');
-    setNuevoMaterial({
-      nombre: '',
-      tipo: 'documento',
-      contenido: '',
-      url: '',
-    });
     setErrors({});
     setShowSuccess(false);
     onClose();
   };
-
-  const getMaterialIcon = (tipo: string) => {
-    switch (tipo) {
-      case 'documento': return <Description />;
-      case 'enlace': return <Link />;
-      case 'texto': return <PictureAsPdf />;
-      default: return <Description />;
-    }
+  const getMaterialIcon = () => {
+    return <Description />;
   };
 
   return (
@@ -268,20 +233,6 @@ export const CreateCourseModal: React.FC<CreateCourseModalProps> = ({
                 error={!!errors.nombre}
                 helperText={errors.nombre}
               />
-              <FormControl fullWidth required error={!!errors.categoria}>
-                <InputLabel>Categoría</InputLabel>
-                <Select
-                  value={formData.categoria}
-                  label="Categoría"
-                  onChange={(e) => handleInputChange('categoria', e.target.value)}
-                >
-                  {categorias.map((categoria) => (
-                    <MenuItem key={categoria} value={categoria}>
-                      {categoria}
-                    </MenuItem>
-                  ))}
-                </Select>
-              </FormControl>
               <Box sx={{ gridColumn: '1 / -1' }}>
                 <TextField
                   label="Descripción"
@@ -293,22 +244,6 @@ export const CreateCourseModal: React.FC<CreateCourseModalProps> = ({
                   placeholder="Describe brevemente el contenido del curso..."
                 />
               </Box>
-              <TextField
-                label="Profesor"
-                value={formData.profesor}
-                onChange={(e) => handleInputChange('profesor', e.target.value)}
-                fullWidth
-                required
-                error={!!errors.profesor}
-                helperText={errors.profesor}
-              />
-              <TextField
-                label="Semestre/Período"
-                value={formData.semestre}
-                onChange={(e) => handleInputChange('semestre', e.target.value)}
-                fullWidth
-                placeholder="Ej: 2024-1, Primavera 2024..."
-              />
             </Box>
           </Paper>
 
@@ -376,70 +311,25 @@ export const CreateCourseModal: React.FC<CreateCourseModalProps> = ({
                 />
               ))}
             </Box>
-          </Paper>
-
-          {/* Materiales */}
+          </Paper>          {/* Materiales */}
           <Paper elevation={1} sx={{ p: 3 }}>
             <Typography variant="h6" gutterBottom color="primary">
               Materiales del Curso
             </Typography>
             
-            {/* Formulario para agregar material */}
-            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2, mb: 2 }}>
-              <Box sx={{ display: 'flex', gap: 2, alignItems: 'center' }}>
-                <TextField
-                  label="Nombre del material"
-                  value={nuevoMaterial.nombre}
-                  onChange={(e) => setNuevoMaterial(prev => ({ ...prev, nombre: e.target.value }))}
-                  size="small"
-                  sx={{ flex: 1 }}
-                />
-                <FormControl size="small" sx={{ minWidth: 120 }}>
-                  <InputLabel>Tipo</InputLabel>
-                  <Select
-                    value={nuevoMaterial.tipo}
-                    label="Tipo"
-                    onChange={(e) => setNuevoMaterial(prev => ({ 
-                      ...prev, 
-                      tipo: e.target.value as 'documento' | 'enlace' | 'texto' 
-                    }))}
-                  >
-                    <MenuItem value="documento">Documento</MenuItem>
-                    <MenuItem value="enlace">Enlace</MenuItem>
-                    <MenuItem value="texto">Texto</MenuItem>
-                  </Select>
-                </FormControl>
-                <Button 
-                  variant="outlined" 
-                  onClick={handleAddMaterial}
-                  disabled={!nuevoMaterial.nombre.trim()}
-                  startIcon={<Add />}
-                >
-                  Agregar
-                </Button>
-              </Box>
-
-              {/* Campos adicionales según el tipo */}
-              {nuevoMaterial.tipo === 'enlace' && (
-                <TextField
-                  label="URL del enlace"
-                  value={nuevoMaterial.url}
-                  onChange={(e) => setNuevoMaterial(prev => ({ ...prev, url: e.target.value }))}
-                  size="small"
-                  placeholder="https://..."
-                />
-              )}
-              
-              {nuevoMaterial.tipo === 'texto' && (
-                <TextField
-                  label="Contenido del texto"
-                  value={nuevoMaterial.contenido}
-                  onChange={(e) => setNuevoMaterial(prev => ({ ...prev, contenido: e.target.value }))}
-                  multiline
-                  rows={3}
-                  placeholder="Escribe o pega el contenido aquí..."
-                />
-              )}
+            {/* Botón para agregar material */}
+            <Box sx={{ mb: 2 }}>
+              <Button 
+                variant="outlined" 
+                onClick={handleAddMaterial}
+                startIcon={<Add />}
+                size="large"
+              >
+                Agregar Archivos
+              </Button>
+              <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
+                Selecciona archivos PDF, TXT, MD, DOC o DOCX
+              </Typography>
             </Box>
 
             {/* Lista de materiales agregados */}
@@ -448,11 +338,10 @@ export const CreateCourseModal: React.FC<CreateCourseModalProps> = ({
                 {materiales.map((material) => (
                   <ListItem key={material.id}>
                     <Box sx={{ mr: 2 }}>
-                      {getMaterialIcon(material.tipo)}
-                    </Box>
-                    <ListItemText
+                      {getMaterialIcon()}
+                    </Box>                    <ListItemText
                       primary={material.nombre}
-                      secondary={`Tipo: ${material.tipo}`}
+                      secondary={`${material.fueConvertido ? 'PDF → TXT' : material.tipo.toUpperCase()} • ${(material.tamaño / 1024).toFixed(1)} KB`}
                     />
                     <ListItemSecondaryAction>
                       <IconButton 
@@ -482,8 +371,18 @@ export const CreateCourseModal: React.FC<CreateCourseModalProps> = ({
           disabled={showSuccess}
         >
           {showSuccess ? 'Guardando...' : 'Crear Curso'}
-        </Button>
-      </DialogActions>
+        </Button>      </DialogActions>
+
+      {/* Modal de subida de material */}
+      {tempCourseId && (
+        <UploadMaterialModal
+          open={uploadModalOpen}
+          onClose={() => setUploadModalOpen(false)}
+          cursoId={tempCourseId}
+          cursoNombre={formData.nombre || 'Nuevo Curso'}
+          onMaterialUploaded={handleMaterialUploaded}
+        />
+      )}
     </Dialog>
   );
 };

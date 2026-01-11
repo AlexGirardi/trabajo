@@ -1,0 +1,272 @@
+import { ollamaClient } from './ollamaClient';
+import type { Question, ExamGenerationRequest } from '../types';
+
+export interface ExamGenerationResult { success: boolean; questions: Question[]; error?: string; titulo?: string; descripcion?: string; }
+interface ParsedAIResponse { preguntas: any[]; titulo?: string; descripcion?: string; }
+
+export class ExamAIService {
+  private model: string;
+  constructor(model: string = 'llama3.1:8b') { this.model = model; }
+
+  async generateExam(request: ExamGenerationRequest, materials?: string, locale?: 'es' | 'en'): Promise<ExamGenerationResult> {
+    try {
+      const isHealthy = await ollamaClient.checkHealth();
+      if (!isHealthy) throw new Error('Ollama no está disponible. Asegúrate de que esté ejecutándose.');
+      const lang: 'es' | 'en' = locale || (localStorage.getItem('ui.locale') === 'en' ? 'en' : 'es');
+      const prompt = this.buildPrompt(request, materials, lang);
+      // Permitir ajustar ventana de contexto y tokens de salida vía variables de entorno
+      const numCtx = Number((import.meta as any).env?.VITE_OLLAMA_NUM_CTX) || 32768; // por defecto 32768
+      const numPredict = Number((import.meta as any).env?.VITE_OLLAMA_NUM_PREDICT) || 4000;
+      const response = await ollamaClient.generate({
+        model: this.model,
+        prompt,
+        // Cast a any para permitir opciones avanzadas (num_ctx / num_predict) que el tipo base no declara
+        options: {
+          temperature: 0.7,
+          num_ctx: numCtx,
+          num_predict: numPredict
+        } as any
+      });
+      const { questions, titulo, descripcion } = this.parseResponse(response, request, lang);
+      return { success: true, questions, titulo, descripcion };
+    } catch (error) {
+      return { success: false, questions: [], error: error instanceof Error ? error.message : 'Error desconocido' };
+    }
+  }
+
+  private buildPrompt(request: ExamGenerationRequest, materials?: string, locale: 'es' | 'en' = 'es'): string {
+    const difficultyMap: Record<string,string> = { facil: 'fácil', medio: 'medio', dificil: 'difícil' };
+    const difficultyEn: Record<string,string> = { facil: 'easy', medio: 'medium', dificil: 'hard' };
+    const difficulty = locale === 'en' ? (difficultyEn[request.dificultad] || 'medium') : (difficultyMap[request.dificultad] || 'medio');
+  const allowed = request.tiposPreguntas;
+  let prompt: string;
+  if (locale === 'en') {
+    prompt = `You are an expert exam generator. Return ONLY valid JSON with no extra text.\n\nGOAL: Create a full exam with helpful metadata.\n\nStrict expected structure:\n{\n  \"titulo\": \"Short specific exam title (max 12 words)\",\n  \"descripcion\": \"Concise summary (1-2 sentences, 25-60 words) stating scope, focus and assessed knowledge type\",\n  \"preguntas\": [ EXACTLY ${request.numeroPreguntas} objects ]\n}\n\nGLOBAL DIFFICULTY: ${difficulty}.\nALLOWED TYPES (ONLY these, nothing else): ${allowed.join(', ')}\n\nGENERAL RULES:\n- Create exactly ${request.numeroPreguntas} questions\n- ALL must be unique and cover different subtopics\n- Don’t repeat dominant keywords or identical openings\n- Vary length and structure\n- Don’t invent unknown types\n- titulo and descripcion MUST always be present\n\n`;
+  } else {
+    prompt = `Eres un generador experto de exámenes. Devuelve SOLO JSON válido sin ningún texto adicional.\n\nOBJETIVO: Crear un examen completo con metadatos útiles.\n\nEstructura estricta esperada:\n{\n  \"titulo\": \"Título breve (máx 12 palabras) claro y específico del tema evaluado\",\n  \"descripcion\": \"Resumen conciso (1-2 frases, 25-60 palabras) indicando alcance, enfoque y tipo de conocimientos evaluados\",\n  \"preguntas\": [ EXACTAMENTE ${request.numeroPreguntas} objetos ]\n}\n\nDIFICULTAD GLOBAL: ${difficulty}.\nTIPOS PERMITIDOS (usa SOLO estos, ningún otro): ${allowed.join(', ')}\n\nREGLAS GENERALES:\n- Crea exactamente ${request.numeroPreguntas} preguntas\n- TODAS deben ser únicas y cubrir subtemas diferentes del material\n- No repitas palabras clave dominantes ni construcciones idénticas\n- Varía el inicio y la longitud de las preguntas\n- NO inventes tipos no listados\n- titulo y descripcion DEBEN estar siempre presentes\n\n`;
+  }
+  if (materials && materials.trim()) { prompt += (locale==='en'?`STUDY MATERIAL (use ONLY this content):\n${materials}\n\n`:`MATERIAL DE ESTUDIO (usa SOLO este contenido):\n${materials}\n\n`); }
+    // Formatos solo de los tipos permitidos
+    const formatLines: string[] = [];
+    if (allowed.includes('multiple')) {
+      formatLines.push(locale==='en'
+        ? `MULTIPLE: { \"tipo\": \"multiple\", \"pregunta\": \"Text...\", \"opciones\": [\"Option 1\",\"Option 2\",\"Option 3\",\"Option 4\"], \"respuestaCorrecta\": index(0-3), \"explicacion\": \"... reason ...\", \"puntos\": 5 }`
+        : `MULTIPLE: { \"tipo\": \"multiple\", \"pregunta\": \"Texto...\", \"opciones\": [\"Opción 1\",\"Opción 2\",\"Opción 3\",\"Opción 4\"], \"respuestaCorrecta\": indice(0-3), \"explicacion\": \"...\", \"puntos\": 5 }`
+      );
+    }
+    if (allowed.includes('verdadero_falso')) {
+      formatLines.push(locale==='en'
+        ? `VERDADERO_FALSO: { \"tipo\": \"verdadero_falso\", \"pregunta\": \"Statement...\", \"respuestaCorrecta\": true|false, \"explicacion\": \"...\", \"puntos\": 3 }`
+        : `VERDADERO_FALSO: { \"tipo\": \"verdadero_falso\", \"pregunta\": \"Texto...\", \"respuestaCorrecta\": true|false, \"explicacion\": \"...\", \"puntos\": 3 }`
+      );
+    }
+    if (allowed.includes('abierta')) {
+      formatLines.push(locale==='en'
+        ? `ABIERTA: { \"tipo\": \"abierta\", \"pregunta\": \"Statement with exactly one blank ________ inside (not start/end)\", \"respuestaCorrecta\": \"word\", \"explicacion\": \"...\", \"puntos\": 10 }`
+        : `ABIERTA: { \"tipo\": \"abierta\", \"pregunta\": \"Afirmación con un hueco ________ en medio\", \"respuestaCorrecta\": \"palabra\", \"explicacion\": \"...\", \"puntos\": 10 }`
+      );
+    }
+    if (locale==='en') {
+      prompt += `Allowed formats (ONLY the listed types):\n${formatLines.join('\n')}\n\nSpecific rules questions:\n- multiple: distribute respuestaCorrecta indices randomly (not always 0)\n- multiple: options are pure text — do NOT prefix with letters or numbers (e.g., 'A.', 'B)', '1)')\n- Do NOT append phrases like "according to the material" or "based on the material" at the end of questions\n${allowed.includes('verdadero_falso') ? '- verdadero_falso: respuestaCorrecta boolean\n' : ''}${allowed.includes('abierta') ? '- abierta: statement with ONE blank \"________\" (not start/end) and respuestaCorrecta ONE single word (no articles)\n- Vary blank position across questions\n' : ''}- fixed points per type as in examples\n\nMetadata rules:\n- titulo: avoid generic words like "Exam", include main topic\n- descripcion: mention scope & assessed skills without repeating titulo\n\nIMPORTANT: Output ONLY raw JSON. No explanations, no markdown.`;
+    } else {
+      prompt += `Formatos permitidos (usa SOLO los tipos listados):\n${formatLines.join('\n')}\n\nReglas específicas preguntas:\n- multiple: distribuye índices de respuestaCorrecta aleatoriamente (no siempre 0)\n- multiple: las opciones deben ser solo el texto — NO añadas prefijos de letra o número (p. ej., 'A.', 'B)', '1)')\n- NO termines las preguntas con frases como "según el material" o "de acuerdo con el material"\n${allowed.includes('verdadero_falso') ? '- verdadero_falso: respuestaCorrecta boolean\n' : ''}${allowed.includes('abierta') ? '- abierta: afirmación con UN solo hueco \"________\" (no inicio / final) y respuestaCorrecta UNA palabra concreta (sin artículos)\n- Evita siempre colocar el hueco en la misma posición en todas las preguntas\n' : ''}- puntos fijos por tipo como en los ejemplos\n\nReglas metadatos:\n- titulo: sin palabras genéricas vacías como \"Examen\", debe incluir el tema principal (ej: \"Derivadas e Integrales Básicas\")\n- descripcion: debe mencionar el rango temático y el tipo de habilidades evaluadas (memoria, comprensión, aplicación) sin repetir exactamente el titulo\n\nIMPORTANTE: Responde SOLO con el JSON. Nada de explicaciones, ni formato markdown.`;
+    }
+    return prompt;
+  }
+
+  private parseResponse(raw: string, request: ExamGenerationRequest, locale: 'es'|'en'): { questions: Question[]; titulo?: string; descripcion?: string } {
+    try {
+      const jsonText = this.extractJSON(raw);
+      const parsed: ParsedAIResponse | any = JSON.parse(jsonText);
+      let rawQuestions: any[] = [];
+      let titulo: string | undefined; let descripcion: string | undefined;
+      if (Array.isArray(parsed)) rawQuestions = parsed; else if (parsed && typeof parsed === 'object') {
+        if (Array.isArray(parsed.preguntas)) rawQuestions = parsed.preguntas; else if (Array.isArray(parsed.questions)) rawQuestions = parsed.questions; else if (Array.isArray(parsed.data)) rawQuestions = parsed.data; else if (Array.isArray(parsed.items)) rawQuestions = parsed.items;
+        titulo = parsed.titulo || parsed.title; descripcion = parsed.descripcion || parsed.description;
+      }
+      if (!rawQuestions.length) throw new Error('No se encontraron preguntas');
+      const allowed = new Set(request.tiposPreguntas);
+      const validated: Question[] = rawQuestions
+        .map((q,i)=>this.validateAndTransformQuestion(q,i))
+        .filter((q): q is Question => !!q && allowed.has(q.tipo));
+      const unique = this.removeDuplicateQuestions(validated);
+      if (!titulo) titulo = locale==='en' ? `Course Exam - ${new Date().toLocaleDateString()}` : `Examen del curso - ${new Date().toLocaleDateString()}`;
+      if (!descripcion) descripcion = locale==='en' ? 'Exam automatically generated' : 'Examen generado automáticamente';
+      if (unique.length < request.numeroPreguntas) {
+        const faltan = request.numeroPreguntas - unique.length;
+        unique.push(...this.generateFallbackQuestions({ ...request, numeroPreguntas: faltan }, locale));
+      }
+      return { questions: unique.slice(0, request.numeroPreguntas), titulo, descripcion };
+    } catch (e) {
+      return { questions: this.generateFallbackQuestions(request, locale), titulo: locale==='en' ? 'Generated Exam' : 'Examen Generado', descripcion: locale==='en' ? 'Automatically generated (fallback)' : 'Generado automáticamente (fallback)' };
+    }
+  }
+
+  private extractJSON(text: string): string {
+    const firstBrace = text.indexOf('{'); const firstBracket = text.indexOf('[');
+    if (firstBrace === -1 && firstBracket === -1) throw new Error('Sin JSON');
+    let start: number; let openChar: string;
+    if (firstBrace !== -1 && (firstBracket === -1 || firstBrace < firstBracket)) { start = firstBrace; openChar = '{'; } else { start = firstBracket; openChar = '['; }
+    const closeChar = openChar === '{' ? '}' : ']'; let depth = 0;
+    for (let i = start; i < text.length; i++) { const c = text[i]; if (c === openChar) depth++; else if (c === closeChar) { depth--; if (depth === 0) return text.slice(start, i + 1); } }
+    throw new Error('JSON incompleto');
+  }
+
+  private validateAndTransformQuestion(rawQuestion: any, index: number): Question | null {
+    try {
+  const base = { id: `generated_${Date.now()}_${index}` , pregunta: (rawQuestion.pregunta || rawQuestion.question || '').toString().trim().slice(0,400) || `Pregunta ${index+1}`, explicacion: (rawQuestion.explicacion || rawQuestion.explanation || '').toString().trim().slice(0,400) || '', puntos: this.resolvePoints(rawQuestion) };
+      const tipo = rawQuestion.tipo || rawQuestion.type; if (!tipo) return null;
+      if (tipo === 'multiple') {
+        const sanitizeOption = (s: string) => s
+          // remove leading letter/number markers like "A.", "B)", "1)", "1.", "a)"
+          .replace(/^\s*([A-Za-z]|\d{1,2})\s*[\.)-]\s+/,'')
+          .replace(/^\s*([A-Za-z]|\d{1,2})\s*:\s+/,'')
+          .trim()
+          .slice(0,160);
+        const opciones: string[] = Array.isArray(rawQuestion.opciones || rawQuestion.options)
+          ? (rawQuestion.opciones || rawQuestion.options).map((o: any) => sanitizeOption(String(o ?? '')))
+          : ['Opción 1', 'Opción 2', 'Opción 3', 'Opción 4'];
+
+        let rcRaw = rawQuestion.respuestaCorrecta ?? rawQuestion.correcta ?? rawQuestion.correctAnswer ?? rawQuestion.answer;
+        let rc: number | null = null;
+
+        const toIndexFromLetter = (s: string) => {
+          const m = s.trim().toUpperCase();
+          if (/^[A-Z]$/.test(m)) return m.charCodeAt(0) - 65; // A->0
+          if (/^[A-Z][\.)]$/.test(m)) return m.charCodeAt(0) - 65; // A) A.
+          const m2 = m.replace(/\s+/g,'');
+          if (/^[A-Z][\.)-]$/.test(m2)) return m2.charCodeAt(0) - 65; // A- etc
+          return -1;
+        };
+
+        if (typeof rcRaw === 'number') {
+          if (rcRaw >= 0 && rcRaw < opciones.length) rc = rcRaw;
+        } else if (typeof rcRaw === 'string') {
+          const trimmed = rcRaw.trim();
+            // a) / A / 1 / texto exacto
+          const letterIdx = toIndexFromLetter(trimmed.replace(/\s+/g,''));
+          if (letterIdx >= 0 && letterIdx < opciones.length) rc = letterIdx;
+          else if (/^\d+$/.test(trimmed)) {
+            const num = parseInt(trimmed, 10);
+            if (num >= 0 && num < opciones.length) rc = num; // ya es índice
+            else if (num >=1 && num <= opciones.length) rc = num - 1; // quizá 1-based
+          } else {
+            // Buscar coincidencia textual (case-insensitive)
+            const lower = trimmed.toLowerCase();
+            const foundIdx = opciones.findIndex(o => o.toLowerCase() === lower);
+            if (foundIdx !== -1) rc = foundIdx;
+          }
+        }
+
+        // Fallback: si vino un array answer tipo 'respuestaCorrecta' string que está contenida dentro de opción parcial
+        if (rc == null && typeof rcRaw === 'string') {
+          const lower = rcRaw.toLowerCase();
+          const containsIdx = opciones.findIndex(o => o.toLowerCase().includes(lower) || lower.includes(o.toLowerCase()));
+          if (containsIdx !== -1) rc = containsIdx;
+        }
+
+        if (rc == null || rc < 0 || rc >= opciones.length) {
+          // Último recurso: NO aleatorio fijo (0) para reproducibilidad
+          rc = 0;
+        }
+        return { ...base, tipo: 'multiple', opciones, respuestaCorrecta: rc };
+      }
+      if (tipo === 'verdadero_falso') {
+        let rc = rawQuestion.respuestaCorrecta ?? rawQuestion.correcta ?? rawQuestion.correctAnswer;
+        if (typeof rc === 'string') {
+          const v = rc.trim().toLowerCase();
+          if (['true','verdadero','v','sí','si','1'].includes(v)) rc = true;
+          else if (['false','falso','f','no','0'].includes(v)) rc = false;
+        }
+        if (typeof rc !== 'boolean') rc = Math.random() > 0.5; // fallback
+        return { ...base, tipo: 'verdadero_falso', respuestaCorrecta: rc };
+      }
+  if (tipo === 'abierta') {
+        let pregunta = base.pregunta
+          .replace(/\?/g, '') // quitar signos de interrogación
+          .replace(/^\s*¿/,'')
+          .trim();
+        // Garantizar que es afirmación y contiene exactamente un hueco
+        const blankCount = (pregunta.match(/________/g) || []).length;
+        if (blankCount === 0) {
+          const words = pregunta.split(' ');
+            if (words.length > 6) {
+              const pos = Math.max(1, Math.min(words.length - 2, Math.floor(words.length/2)));
+              words[pos] = '________';
+              pregunta = words.join(' ');
+            } else {
+              pregunta += ' ________';
+            }
+        } else if (blankCount > 1) {
+          // Mantener solo el primero
+          let replaced = false;
+          pregunta = pregunta.replace(/________/g, () => {
+            if (replaced) return 'XXXXX';
+            replaced = true; return '________';
+          }).replace(/XXXXX/g,'');
+        }
+        // Evitar hueco al inicio o final
+        pregunta = pregunta.replace(/^________\s*/, '').replace(/\s*________$/,' ________');
+        const respuesta = (rawQuestion.respuestaCorrecta || rawQuestion.answer || '').toString().split(/\s+/)[0] || 'Respuesta';
+        return { ...base, tipo: 'abierta', pregunta, respuestaCorrecta: respuesta };
+      }
+      return null;
+    } catch { return null; }
+  }
+
+  private resolvePoints(raw:any): number { if (typeof raw.puntos === 'number') return raw.puntos; const t = raw.tipo || raw.type; if (t==='multiple') return 5; if (t==='verdadero_falso') return 3; if (t==='abierta') return 10; return 5; }
+
+  private removeDuplicateQuestions(questions: Question[]): Question[] { const seen = new Set<string>(); const unique: Question[] = []; for (const q of questions) { const norm = q.pregunta.toLowerCase().replace(/[^\w\s]/g,'').replace(/\s+/g,' ').trim(); if (!seen.has(norm)) { seen.add(norm); unique.push(q); } } return unique; }
+
+  private generateFallbackQuestions(request: ExamGenerationRequest, locale: 'es'|'en'='es'): Question[] { const questions: Question[] = []; const types = request.tiposPreguntas; const explain = locale==='en'?'Example':'Ejemplo'; if (types.length===1) { const t = types[0]; for (let i=0;i<request.numeroPreguntas;i++){ if (t==='multiple'){ const f=(locale==='en'?[
+        { pregunta:'Which programming language is most used for web development?', opciones:['Python','JavaScript','Java','C++'], respuestaCorrecta:1},
+        { pregunta:'What does HTML stand for?', opciones:['HyperText Markup Language','High Tech Modern Language','Home Tool Markup Language','Hyperlink Text Management Language'], respuestaCorrecta:0},
+        { pregunta:'What is the default port for HTTPS?', opciones:['80','8080','443','22'], respuestaCorrecta:2}
+      ]:[
+        { pregunta:'¿Cuál es el lenguaje de programación más usado para desarrollo web?', opciones:['Python','JavaScript','Java','C++'], respuestaCorrecta:1},
+        { pregunta:'¿Qué significa HTML?', opciones:['HyperText Markup Language','High Tech Modern Language','Home Tool Markup Language','Hyperlink Text Management Language'], respuestaCorrecta:0},
+        { pregunta:'¿Cuál es el puerto por defecto para HTTPS?', opciones:['80','8080','443','22'], respuestaCorrecta:2}
+      ])[i%3]; questions.push({ id:`fallback_${i}`, tipo:'multiple', pregunta:f.pregunta, opciones:f.opciones, respuestaCorrecta:f.respuestaCorrecta, explicacion:explain, puntos:5}); } else if (t==='verdadero_falso'){ const f=(locale==='en'?[
+        {pregunta:'JavaScript is an interpreted language.',respuestaCorrecta:true},
+        {pregunta:'HTML is a programming language.',respuestaCorrecta:false},
+        {pregunta:'CSS is used for styling.',respuestaCorrecta:true}
+      ]:[
+        {pregunta:'JavaScript es un lenguaje interpretado.',respuestaCorrecta:true},
+        {pregunta:'HTML es un lenguaje de programación.',respuestaCorrecta:false},
+        {pregunta:'CSS se usa para dar estilo.',respuestaCorrecta:true}
+      ])[i%3]; questions.push({ id:`fallback_${i}`, tipo:'verdadero_falso', pregunta:f.pregunta, respuestaCorrecta:f.respuestaCorrecta, explicacion:explain, puntos:3}); } else if (t==='abierta'){ const f=(locale==='en'?[
+        {pregunta:'The standard markup language for the web is ________.', respuestaCorrecta:'HTML'},
+        {pregunta:'The secure protocol for the web is ________.', respuestaCorrecta:'HTTPS'},
+        {pregunta:'The most used version control system is ________.', respuestaCorrecta:'Git'}
+      ]:[
+        {pregunta:'El lenguaje de marcado estándar para la web es ________.', respuestaCorrecta:'HTML'},
+        {pregunta:'El protocolo seguro para la web es ________.', respuestaCorrecta:'HTTPS'},
+        {pregunta:'El sistema de control de versiones más usado es ________.', respuestaCorrecta:'Git'}
+      ])[i%3]; questions.push({ id:`fallback_${i}`, tipo:'abierta', pregunta:f.pregunta, respuestaCorrecta:f.respuestaCorrecta, explicacion:explain, puntos:10}); } } } else { const perType=Math.floor(request.numeroPreguntas/types.length); const remainder=request.numeroPreguntas%types.length; let idx=0; types.forEach((t,tIdx)=>{ const num=perType+(tIdx<remainder?1:0); for (let i=0;i<num;i++){ if (t==='multiple'){ const f=(locale==='en'?[
+          {pregunta:'Which programming language is most used for web development?', opciones:['Python','JavaScript','Java','C++'], respuestaCorrecta:1},
+          {pregunta:'What does CSS stand for?', opciones:['Computer Style Sheets','Cascading Style Sheets','Creative Style Sheets','Custom Style Sheets'], respuestaCorrecta:1}
+        ]:[
+          {pregunta:'¿Cuál es el lenguaje de programación más usado para desarrollo web?', opciones:['Python','JavaScript','Java','C++'], respuestaCorrecta:1},
+          {pregunta:'¿Qué significa CSS?', opciones:['Computer Style Sheets','Cascading Style Sheets','Creative Style Sheets','Custom Style Sheets'], respuestaCorrecta:1}
+        ])[idx%2]; questions.push({ id:`fallback_${idx}`, tipo:'multiple', pregunta:f.pregunta, opciones:f.opciones, respuestaCorrecta:f.respuestaCorrecta, explicacion:explain, puntos:5}); } else if (t==='verdadero_falso'){ const f=(locale==='en'?[
+          {pregunta:'React is a JavaScript library.', respuestaCorrecta:true},
+          {pregunta:'MongoDB is relational.', respuestaCorrecta:false}
+        ]:[
+          {pregunta:'React es una librería de JavaScript.', respuestaCorrecta:true},
+          {pregunta:'MongoDB es relacional.', respuestaCorrecta:false}
+        ])[idx%2]; questions.push({ id:`fallback_${idx}`, tipo:'verdadero_falso', pregunta:f.pregunta, respuestaCorrecta:f.respuestaCorrecta, explicacion:explain, puntos:3}); } else if (t==='abierta'){ const f=(locale==='en'?[
+          {pregunta:'The most popular responsive CSS framework is ________.', respuestaCorrecta:'Bootstrap'},
+          {pregunta:'The creator of Linux is ________ Torvalds.', respuestaCorrecta:'Linus'}
+        ]:[
+          {pregunta:'El framework de CSS para diseño responsivo más popular es ________.', respuestaCorrecta:'Bootstrap'},
+          {pregunta:'El creador de Linux es ________ Torvalds.', respuestaCorrecta:'Linus'}
+        ])[idx%2]; questions.push({ id:`fallback_${idx}`, tipo:'abierta', pregunta:f.pregunta, respuestaCorrecta:f.respuestaCorrecta, explicacion:explain, puntos:10}); } idx++; } }); }
+    return questions.slice(0, request.numeroPreguntas); }
+
+  async getAvailableModels(): Promise<string[]> { return await ollamaClient.listModels(); }
+  setModel(model: string): void { this.model = model; }
+}
+
+// Modelo por defecto configurable via variable de entorno VITE_OLLAMA_MODEL
+const DEFAULT_MODEL = 'qwen2.5:7b-instruct';
+export const examAIService = new ExamAIService(DEFAULT_MODEL);

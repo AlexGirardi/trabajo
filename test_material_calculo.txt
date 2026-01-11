@@ -1,0 +1,31 @@
+Matemáticas Avanzadas - Tema 1: Cálculo Diferencial
+
+1. INTRODUCCIÓN A LAS DERIVADAS
+
+Una derivada es la medida de la rapidez con que cambia una función. 
+Formalmente, la derivada de una función f(x) en un punto x=a se define como:
+
+f'(a) = lim (h→0) [f(a+h) - f(a)] / h
+
+2. REGLAS DE DERIVACIÓN
+
+- Regla de la potencia: d/dx [x^n] = n·x^(n-1)
+- Regla del producto: d/dx [f(x)·g(x)] = f'(x)·g(x) + f(x)·g'(x)
+- Regla de la cadena: d/dx [f(g(x))] = f'(g(x))·g'(x)
+
+3. APLICACIONES DE LAS DERIVADAS
+
+Las derivadas tienen múltiples aplicaciones:
+- Encontrar máximos y mínimos de funciones
+- Determinar la velocidad y aceleración
+- Resolver problemas de optimización
+- Análisis de concavidad y puntos de inflexión
+
+4. EJEMPLOS PRÁCTICOS
+
+Ejemplo 1: Si f(x) = x³ + 2x² - 5x + 1, entonces f'(x) = 3x² + 4x - 5
+
+Ejemplo 2: Para encontrar el máximo de f(x) = -x² + 4x + 3:
+- Derivamos: f'(x) = -2x + 4
+- Igualamos a cero: -2x + 4 = 0, por lo tanto x = 2
+- El máximo está en el punto (2, 11)

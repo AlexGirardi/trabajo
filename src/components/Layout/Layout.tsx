@@ -12,9 +12,6 @@ import {
   ListItemText,
   Toolbar,
   Typography,
-  Avatar,
-  Menu,
-  MenuItem,
   Divider,
   Badge,
 } from '@mui/material';
@@ -27,28 +24,26 @@ import {
   Settings,
   Notifications,
   AccountCircle,
-  ExitToApp,
 } from '@mui/icons-material';
 import { useNavigate, useLocation } from 'react-router-dom';
+import { useI18n } from '../../i18n';
+import { Select, MenuItem } from '@mui/material';
 
 const drawerWidth = 240;
 
-interface LayoutProps {
-  children: React.ReactNode;
-  onLogout?: () => void;
-}
+interface LayoutProps { children: React.ReactNode; }
 
 const menuItems = [
-  { text: 'Dashboard', icon: <Dashboard />, path: '/dashboard' },
-  { text: 'Mis Cursos', icon: <School />, path: '/courses' },
-  { text: 'Generar Examen', icon: <Quiz />, path: '/generate-exam' },
-  { text: 'Mis Exámenes', icon: <Assessment />, path: '/exams' },
-  { text: 'Configuración', icon: <Settings />, path: '/settings' },
+  { key: 'nav.dashboard', icon: <Dashboard />, path: '/dashboard' },
+  { key: 'nav.courses', icon: <School />, path: '/courses' },
+  { key: 'nav.generateExam', icon: <Quiz />, path: '/generate-exam' },
+  { key: 'nav.exams', icon: <Assessment />, path: '/exams' },
+  { key: 'nav.settings', icon: <Settings />, path: '/settings' },
 ];
 
-export const Layout: React.FC<LayoutProps> = ({ children, onLogout }) => {
+export const Layout: React.FC<LayoutProps> = ({ children }) => {
   const [mobileOpen, setMobileOpen] = useState(false);
-  const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null);
+  const { t, locale, setLocale } = useI18n();
   const navigate = useNavigate();
   const location = useLocation();
 
@@ -56,19 +51,7 @@ export const Layout: React.FC<LayoutProps> = ({ children, onLogout }) => {
     setMobileOpen(!mobileOpen);
   };
 
-  const handleMenu = (event: React.MouseEvent<HTMLElement>) => {
-    setAnchorEl(event.currentTarget);
-  };
-
-  const handleClose = () => {
-    setAnchorEl(null);
-  };
-  const handleLogout = () => {
-    handleClose();
-    if (onLogout) {
-      onLogout();
-    }
-  };
+  // User menu removed (no auth)
 
   const drawer = (
     <div>
@@ -83,7 +66,7 @@ export const Layout: React.FC<LayoutProps> = ({ children, onLogout }) => {
       <Divider />
       <List>
         {menuItems.map((item) => (
-          <ListItem key={item.text} disablePadding>
+          <ListItem key={item.key} disablePadding>
             <ListItemButton
               selected={location.pathname === item.path}
               onClick={() => navigate(item.path)}
@@ -103,7 +86,7 @@ export const Layout: React.FC<LayoutProps> = ({ children, onLogout }) => {
               <ListItemIcon sx={{ color: 'inherit' }}>
                 {item.icon}
               </ListItemIcon>
-              <ListItemText primary={item.text} />
+              <ListItemText primary={t(item.key)} />
             </ListItemButton>
           </ListItem>
         ))}
@@ -132,50 +115,25 @@ export const Layout: React.FC<LayoutProps> = ({ children, onLogout }) => {
             <MenuIcon />
           </IconButton>
           <Typography variant="h6" noWrap component="div" sx={{ flexGrow: 1 }}>
-            {menuItems.find(item => item.path === location.pathname)?.text || 'EstudIA'}
+            {t(menuItems.find(item => item.path === location.pathname)?.key || 'nav.brand')}
           </Typography>
+
+          <Select
+            size="small"
+            value={locale}
+            onChange={(e)=> setLocale(e.target.value as any)}
+            sx={{ mr:2, color:'inherit', '.MuiOutlinedInput-notchedOutline': { borderColor: 'rgba(255,255,255,0.3)' }, '&:hover .MuiOutlinedInput-notchedOutline': { borderColor: 'white' } }}
+          >
+            <MenuItem value="es">ES</MenuItem>
+            <MenuItem value="en">EN</MenuItem>
+          </Select>
           
           <IconButton color="inherit" sx={{ mr: 1 }}>
-            <Badge badgeContent={3} color="error">
+            <Badge badgeContent={0} color="error">
               <Notifications />
             </Badge>
           </IconButton>
-          
-          <IconButton
-            size="large"
-            aria-label="account of current user"
-            aria-controls="menu-appbar"
-            aria-haspopup="true"
-            onClick={handleMenu}
-            color="inherit"
-          >
-            <Avatar sx={{ width: 32, height: 32 }}>
-              <AccountCircle />
-            </Avatar>
-          </IconButton>
-          <Menu
-            id="menu-appbar"
-            anchorEl={anchorEl}
-            anchorOrigin={{
-              vertical: 'top',
-              horizontal: 'right',
-            }}
-            keepMounted
-            transformOrigin={{
-              vertical: 'top',
-              horizontal: 'right',
-            }}
-            open={Boolean(anchorEl)}
-            onClose={handleClose}
-          >
-            <MenuItem onClick={handleClose}>Mi Perfil</MenuItem>
-            <MenuItem onClick={handleClose}>Configuración</MenuItem>
-            <Divider />
-            <MenuItem onClick={handleLogout}>
-              <ExitToApp sx={{ mr: 1 }} />
-              Cerrar Sesión
-            </MenuItem>
-          </Menu>
+          <AccountCircle />
         </Toolbar>
       </AppBar>
       

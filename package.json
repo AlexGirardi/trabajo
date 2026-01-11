@@ -1,11 +1,28 @@
 {
   "name": "trabajo",
+  "version": "1.0.0",
   "private": true,
-  "version": "0.0.0",
+  "description": "EstudIA - Generador de exámenes personalizados",
+  "author": "EstudIA",
   "type": "module",
+  "main": "electron/main.cjs",
   "scripts": {
     "dev": "vite",
+    "dev:auto": "node ./scripts/start-env.mjs",
+    "dev:auto:electron": "node ./scripts/start-env.mjs --electron",
+    "dev:electron": "concurrently \"npm:dev\" \"wait-on http://localhost:5176 && electron .\"",
+    "dev:server": "cd server && npm run dev",
+    "dev:server:pg": "cd server && npm run dev:pg",
+    "start:all:memory": "concurrently \"npm run dev:server\" \"npm run dev:auto\"",
+    "start:all:pg": "concurrently \"npm run dev:server:pg\" \"npm run dev:auto\"",
     "build": "tsc -b && vite build",
+    "build:electron": "npm run build && electron-builder",
+    "build:electron:nosign": "node disableSignAndBuild.cjs",
+    "package:electron": "npm run build && electron-packager . EstudIA --platform=win32 --arch=x64 --overwrite --out=dist_packager --prune=true --asar --ignore=dist_electron --ignore=dist_packager --executable-name=EstudIA --app-version=1.0.0",
+    "package:zip": "powershell -Command Compress-Archive -Path dist_packager/EstudIA-win32-x64/* -DestinationPath dist_packager/EstudIA-win32-x64.zip -Force",
+    "test": "vitest",
+    "test:ui": "vitest --ui",
+    "test:run": "vitest run",
     "lint": "eslint .",
     "preview": "vite preview"
   },
@@ -16,22 +33,53 @@
     "@mui/lab": "^7.0.0-beta.13",
     "@mui/material": "^7.1.1",
     "axios": "^1.9.0",
+    "pdfjs-dist": "^5.3.31",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",
     "react-router-dom": "^7.6.2",
     "recharts": "^2.15.3"
+  },
+  "build": {
+    "appId": "com.estudia.app",
+    "productName": "EstudIA",
+    "asar": true,
+    "forceCodeSigning": false,
+    "directories": {
+      "output": "dist_electron"
+    },
+    "files": [
+      "dist/**/*",
+      "electron/main.cjs",
+      "electron/preload.cjs",
+      "electron/ipcHandlers.cjs"
+    ],
+    "win": {
+      "target": "portable",
+      "sign": false,
+      "signAndEditExecutable": false,
+      "publisherName": null,
+      "verifyUpdateCodeSignature": false
+    }
   },
   "devDependencies": {
     "@eslint/js": "^9.25.0",
     "@types/react": "^19.1.2",
     "@types/react-dom": "^19.1.2",
     "@vitejs/plugin-react": "^4.4.1",
+    "@vitest/ui": "^4.0.8",
+    "concurrently": "^8.2.0",
+    "electron": "^26.2.0",
+    "electron-builder": "^24.6.0",
+    "electron-packager": "^17.1.2",
     "eslint": "^9.25.0",
     "eslint-plugin-react-hooks": "^5.2.0",
     "eslint-plugin-react-refresh": "^0.4.19",
     "globals": "^16.0.0",
+    "jsdom": "^27.2.0",
     "typescript": "~5.8.3",
     "typescript-eslint": "^8.30.1",
-    "vite": "^6.3.5"
+    "vite": "^6.3.5",
+    "vitest": "^4.0.8",
+    "wait-on": "^7.0.1"
   }
 }

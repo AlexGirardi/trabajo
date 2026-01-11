@@ -1,0 +1,115 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
+// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
+
+generator client {
+  provider = "prisma-client-js"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// Domain models
+model Course {
+  id              String    @id @default(cuid())
+  fechaCreacion   DateTime  @default(now())
+  nombre          String
+  descripcion     String    @default("")
+  categoria       String?   
+  semestre        String?
+  profesor        String?
+  color           String?
+  tags            String[]  @default([])
+  materialesCount Int       @default(0)
+  examenesCount   Int       @default(0)
+  materials       Material[]
+  exams           Exam[]
+}
+// Enums
+enum MaterialTipo {
+  pdf
+  texto
+  documento
+}
+
+enum Dificultad {
+  facil
+  medio
+  dificil
+}
+
+enum QuestionTipo {
+  multiple
+  verdadero_falso
+  abierta
+}
+
+model Material {
+  id          String   @id @default(cuid())
+  cursoId     String
+  nombre      String
+  tipo        MaterialTipo @default(texto)
+  contenido   String
+  fechaSubida DateTime @default(now())
+  tamaño      Int
+  activo      Boolean  @default(true)
+  course      Course   @relation(fields: [cursoId], references: [id], onDelete: Cascade)
+}
+
+model Exam {
+  id              String     @id @default(cuid())
+  cursoId         String
+  titulo          String
+  descripcion     String     @default("")
+  dificultad      Dificultad?
+  duracionMinutos Int
+  intentosMaximos Int        @default(1)
+  fechaCreacion   DateTime   @default(now())
+  puntuacionTotal Int        @default(0)
+  preguntas       Question[]
+  course          Course     @relation(fields: [cursoId], references: [id], onDelete: Cascade)
+  attempts        ExamAttempt[]
+  results         ExamResult[]
+}
+
+model Question {
+  id                String  @id @default(cuid())
+  examId            String
+  tipo              QuestionTipo
+  pregunta          String
+  opciones          String[] @default([])
+  respuestaCorrecta String
+  explicacion       String?
+  puntos            Int     @default(1)
+  exam              Exam    @relation(fields: [examId], references: [id], onDelete: Cascade)
+}
+
+model ExamAttempt {
+  id         String   @id @default(cuid())
+  examId     String
+  startTime  DateTime
+  endTime    DateTime?
+  completado Boolean  @default(false)
+  exam       Exam     @relation(fields: [examId], references: [id], onDelete: Cascade)
+  results    ExamResult[]
+}
+
+model ExamResult {
+  id              String   @id @default(cuid())
+  examId          String
+  attemptId       String
+  correctAnswers  Int
+  incorrectAnswers Int
+  blankAnswers    Int
+  percentage      Float
+  totalPoints     Float
+  earnedPoints    Float
+  createdOn       DateTime @default(now())
+  exam            Exam     @relation(fields: [examId], references: [id], onDelete: Cascade)
+  attempt         ExamAttempt @relation(fields: [attemptId], references: [id], onDelete: Cascade)
+}
